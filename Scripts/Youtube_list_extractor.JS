@@ -1,20 +1,144 @@
 async function scrapeYouTubePlaylistToCSV({
-  fileName = `${document.title
-    .replace(/\s*-\s*YouTube\s*$/i, "")
-    .replace(/[<>:"/\\|?*]/g, "_")
-    .replace(/\s+/g, " ")
-    .trim()}.csv`,
+  fileName = null, // Will be auto-generated from page header
   autoScroll = true,
-  maxScrollRounds = 200,
-  delayMs = 700
+  maxScrollRounds = 100, // Reduced from 200
+  delayMs = 1000, // Increased from 700ms for better stability
+  timeoutMs = 300000 // 5 minute timeout
 } = {}) {
+  console.log("🚀 Starting YouTube playlist extraction...");
+  
+  // Extract playlist name from page header
+  function getPlaylistNameFromPage() {
+    // Debug function to see what's available
+    function debugAvailableElements() {
+      console.log("🔍 Debugging available elements:");
+      
+      // Check all h1 elements
+      const h1s = document.querySelectorAll('h1');
+      h1s.forEach((h1, i) => {
+        console.log(`H1 ${i}: "${h1.textContent.trim()}" - Classes: ${h1.className} - Parent: ${h1.parentElement?.tagName}`);
+      });
+      
+      // Check the exact element from your HTML
+      const exactElement = document.evaluate(
+        '/html/body/ytd-app/div[1]/ytd-page-manager/ytd-browse[2]/yt-page-header-renderer/yt-page-header-view-model/div[2]/div[1]/div[1]/div/yt-dynamic-text-view-model/h1/span',
+        document,
+        null,
+        XPathResult.FIRST_ORDERED_NODE_TYPE,
+        null
+      ).singleNodeValue;
+      
+      if (exactElement) {
+        console.log(`XPath Element: "${exactElement.textContent.trim()}"`);
+      }
+      
+      // Check specific YouTube elements
+      const ytElements = document.querySelectorAll('yt-dynamic-text-view-model.ytPageHeaderViewModelTitle h1 span');
+      ytElements.forEach((el, i) => {
+        if (el.textContent.trim()) {
+          console.log(`YT Dynamic Element ${i}: "${el.textContent.trim()}" - Classes: ${el.className}`);
+        }
+      });
+    }
+    
+    // Run debug first
+    debugAvailableElements();
+    
+    // First try the exact XPath from your HTML
+    try {
+      const xpathElement = document.evaluate(
+        '/html/body/ytd-app/div[1]/ytd-page-manager/ytd-browse[2]/yt-page-header-renderer/yt-page-header-view-model/div[2]/div[1]/div[1]/div/yt-dynamic-text-view-model/h1/span',
+        document,
+        null,
+        XPathResult.FIRST_ORDERED_NODE_TYPE,
+        null
+      ).singleNodeValue;
+      
+      if (xpathElement && xpathElement.textContent.trim() && xpathElement.textContent.trim() !== 'Playlist') {
+        const name = xpathElement.textContent.trim();
+        console.log(`🎯 Found playlist name with XPath: "${name}"`);
+        return name;
+      }
+    } catch (error) {
+      console.log("XPath failed:", error);
+    }
+    
+    // Try multiple selectors to find the playlist name
+    const selectors = [
+      // Most specific based on your HTML structure
+      'yt-dynamic-text-view-model.ytPageHeaderViewModelTitle h1 span[dir="auto"][role="text"]',
+      'yt-dynamic-text-view-model.ytPageHeaderViewModelTitle h1 .ytAttributedStringHost',
+      'yt-dynamic-text-view-model h1 span[role="text"]',
+      '.ytPageHeaderViewModelTitle h1 span[dir="auto"]',
+      '.dynamicTextViewModelH1 span[role="text"]',
+      // Fallback selectors
+      'yt-dynamic-text-view-model h1 .ytAttributedStringHost', 
+      '.ytPageHeaderViewModelTitle .ytAttributedStringHost',
+      'ytd-playlist-header-renderer h1.ytd-playlist-header-renderer',
+      'ytd-playlist-header-renderer .playlist-title',
+      'h1#title.ytd-playlist-header-renderer',
+      '.playlist-header-content h1'
+    ];
+    
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (element && element.textContent.trim() && element.textContent.trim() !== 'Playlist') {
+        const name = element.textContent.trim();
+        console.log(`🎯 Found playlist name with selector "${selector}": "${name}"`);
+        return name;
+      }
+    }
+    
+    // Enhanced fallback - look for any span with role="text" that contains meaningful content
+    const textSpans = document.querySelectorAll('span[role="text"]');
+    for (const span of textSpans) {
+      const text = span.textContent.trim();
+      if (text && 
+          text !== 'Playlist' && 
+          !text.includes('YouTube') && 
+          !text.includes('views') &&
+          !text.includes('•') &&
+          !text.includes('episodes') &&
+          !text.includes('updated') &&
+          !text.includes('videos') &&
+          !text.includes('Private') &&
+          !text.includes('Play all') &&
+          text.length > 2 && 
+          text.length < 50) { // Reasonable title length
+        console.log(`🎯 Found playlist name in span[role="text"]: "${text}"`);
+        return text;
+      }
+    }
+    
+    console.log("⚠️ Could not find playlist name, using document title as fallback");
+    // Fallback to document title if no playlist name found
+    return document.title.replace(/\s*-\s*YouTube\s*$/i, "").trim();
+  }
+  
+  // Generate filename if not provided
+  if (!fileName) {
+    const playlistName = getPlaylistNameFromPage();
+    fileName = `${playlistName.replace(/[<>:"/\\|?*]/g, "_").replace(/\s+/g, " ").trim()}.csv`;
+    console.log(`📝 Using playlist name: "${playlistName}"`);
+    console.log(`📄 Generated filename: "${fileName}"`);
+  }
+  
+  const startTime = Date.now();
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   async function autoScrollPlaylist() {
+    console.log("📜 Starting auto-scroll to load all videos...");
     let lastCount = 0;
     let stableRounds = 0;
+    const maxStableRounds = 5; // Reduced from 6
 
-    for (let i = 0; i < maxScrollRounds && stableRounds < 6; i++) {
+    for (let i = 0; i < maxScrollRounds && stableRounds < maxStableRounds; i++) {
+      // Check timeout
+      if (Date.now() - startTime > timeoutMs) {
+        console.log("⏰ Timeout reached, stopping scroll");
+        break;
+      }
+
       window.scrollTo(0, document.documentElement.scrollHeight);
       await sleep(delayMs);
 
@@ -22,12 +146,15 @@ async function scrapeYouTubePlaylistToCSV({
 
       if (count === lastCount) {
         stableRounds++;
+        console.log(`⏳ No new videos found (${stableRounds}/${maxStableRounds}) - Current count: ${count}`);
       } else {
         stableRounds = 0;
         lastCount = count;
-        console.log(`Loaded videos: ${count}`);
+        console.log(`📈 Progress: ${count} videos loaded (Round ${i + 1}/${maxScrollRounds})`);
       }
     }
+    
+    console.log(`✅ Scroll complete! Found ${lastCount} videos total`);
   }
 
   function cleanText(value) {
@@ -74,9 +201,22 @@ async function scrapeYouTubePlaylistToCSV({
     await autoScrollPlaylist();
   }
 
+  console.log("🔍 Extracting video data...");
   const rows = [...document.querySelectorAll("ytd-playlist-video-renderer")];
+  
+  if (rows.length === 0) {
+    console.error("❌ No playlist videos found! Make sure you're on a YouTube playlist page.");
+    return;
+  }
 
-  const data = rows.map(row => {
+  console.log(`📊 Processing ${rows.length} videos...`);
+
+  const data = rows.map((row, index) => {
+    if (index % 50 === 0) {
+      console.log(`🔄 Processing video ${index + 1}/${rows.length}`);
+    }
+
+    try {
     const index = cleanText(row.querySelector("#index")?.textContent);
 
     const titleEl = row.querySelector("a#video-title");
@@ -146,8 +286,31 @@ async function scrapeYouTubePlaylistToCSV({
       thumbnail_url: thumbnailUrl,
       aria_label: h3AriaLabel
     };
-  });
+    } catch (error) {
+      console.warn(`⚠️ Error processing video ${index + 1}:`, error);
+      return {
+        playlist_index: index,
+        title: "Error extracting data",
+        video_id: "",
+        video_url: "",
+        playlist_id: "",
+        start_time: "",
+        channel: "",
+        channel_url: "",
+        duration: "",
+        duration_label: "",
+        views_text: "",
+        published_text: "",
+        watched_status: "",
+        watch_progress: "",
+        thumbnail_url: "",
+        aria_label: ""
+      };
+    }
+  }).filter(Boolean); // Remove any null/undefined entries
 
+  console.log("📝 Generating CSV file...");
+  
   const headers = Object.keys(data[0] || {
     playlist_index: "",
     title: "",
@@ -183,8 +346,25 @@ async function scrapeYouTubePlaylistToCSV({
   link.click();
   document.body.removeChild(link);
 
-`
+  const endTime = Date.now();
+  const duration = ((endTime - startTime) / 1000).toFixed(1);
+  
+  console.log(`✅ Successfully exported ${data.length} videos to "${fileName}"`);
+  console.log(`⏱️ Total time: ${duration} seconds`);
+  console.log(`📁 File downloaded: ${fileName}`);
+  
+  return data;
 }
-`
 
 scrapeYouTubePlaylistToCSV();
+
+// Alternative: Run with custom settings for faster execution
+// scrapeYouTubePlaylistToCSV({
+//   fileName: 'my-custom-name.csv', // Override auto-generated name
+//   maxScrollRounds: 50,            // Limit scrolling rounds
+//   delayMs: 500,                   // Faster scrolling
+//   autoScroll: false               // Skip auto-scroll if playlist is already loaded
+// });
+
+// To stop the script if it's running, execute this in console:
+// window.stop();
