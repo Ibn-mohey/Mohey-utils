@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Facebook Reels Scroll Blocker
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  Blocks scrolling between Facebook Reels and disables navigation arrows
+// @version      1.1
+// @description  Blocks scrolling between Facebook Reels, disables navigation arrows, and stops auto-loop
 // @author       ibn-Mohey
 // @match        https://www.facebook.com/reel/*
 // @match        https://www.facebook.com/reels/*
@@ -120,5 +120,58 @@
     if (document.body) startObserver();
     else document.addEventListener('DOMContentLoaded', startObserver);
 
-    console.log('[Reels Blocker] Active – scrolling and arrows disabled.');
+    // ── Stop video auto-loop: pause when it reaches the end ──
+    const handledVideos = new WeakSet();
+
+    function disableAutoLoop() {
+        document.querySelectorAll('video').forEach(video => {
+            if (handledVideos.has(video)) return;
+            handledVideos.add(video);
+
+            // Disable the built-in loop attribute
+            video.loop = false;
+
+            // Watch for Facebook re-enabling loop
+            const loopObserver = new MutationObserver(() => {
+                if (video.loop) video.loop = false;
+            });
+            loopObserver.observe(video, { attributes: true, attributeFilter: ['loop'] });
+
+            // Also override the loop property setter
+            try {
+                Object.defineProperty(video, 'loop', {
+                    get() { return false; },
+                    set() { /* block */ },
+                    configurable: true,
+                });
+            } catch (e) { /* ignore if already defined */ }
+
+            // Pause when video ends
+            video.addEventListener('ended', () => {
+                video.pause();
+                // Move to start so clicking/space replays from beginning
+                video.currentTime = 0;
+            });
+
+            // Fallback: pause if video reaches near the end (some players don't fire 'ended' with loop)
+            video.addEventListener('timeupdate', () => {
+                if (video.duration && video.currentTime >= video.duration - 0.15) {
+                    video.pause();
+                    video.currentTime = 0;
+                }
+            });
+        });
+    }
+
+    // Run on new video elements added to DOM
+    const videoObserver = new MutationObserver(disableAutoLoop);
+    const startVideoObserver = () => {
+        disableAutoLoop();
+        videoObserver.observe(document.body, { childList: true, subtree: true });
+    };
+
+    if (document.body) startVideoObserver();
+    else document.addEventListener('DOMContentLoaded', startVideoObserver);
+
+    console.log('[Reels Blocker] Active – scrolling, arrows, and auto-loop disabled.');
 })();

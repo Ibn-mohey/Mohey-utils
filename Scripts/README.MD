@@ -91,18 +91,20 @@ A Tampermonkey/Greasemonkey userscript that prevents automatic navigation betwee
 - **Blocks keyboard navigation** – disables Arrow keys, Space, PageUp/PageDown on reels
 - **Blocks touch swipe** – prevents mobile-style swipe navigation
 - **Disables navigation arrows** – neutralizes the Next/Previous Card buttons
+- **Stops auto-loop** – video plays once then pauses; click or press Space to replay
 - **Non-intrusive** – all other controls (sound, like, comment, share) remain fully functional
 
 ### Installation
 
 #### From Greasy Fork (recommended)
 1. Install [Tampermonkey](https://www.tampermonkey.net/) browser extension
-2. Visit the script page on [Greasy Fork](https://greasyfork.org/) and click **Install**
+2. Visit the script page on [Greasy Fork](https://greasyfork.org/en/scripts/578323-facebook-reels-scroll-blocker) and click **Install**
 
 #### Manual Install
 1. Install [Tampermonkey](https://www.tampermonkey.net/) browser extension
 2. Click the Tampermonkey icon → **Create a new script**
-3. Delete the default content and paste the contents of `facebook_reels_blocker.user.js`
+3. go to my github Page [here](https://github.com/Ibn-mohey/Mohey-utils/blob/main/Scripts/facebook_reels_blocker.user.js)
+3. Delete the default content and paste the contents of [`facebook_reels_blocker.user.js`](https://github.com/Ibn-mohey/Mohey-utils/blob/main/Scripts/facebook_reels_blocker.user.js)
 4. Press **Ctrl+S** to save
 5. The script activates automatically on Facebook Reels pages
 
