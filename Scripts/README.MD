@@ -71,8 +71,50 @@ The CSV file contains the following columns:
 - All text fields are properly escaped for CSV format
 - Works with both public and private playlists (if you have access)
 
-## Requirements
+### Requirements
 
 - Modern web browser with JavaScript enabled
 - Access to YouTube playlist page
 - Developer console access
+
+---
+
+## Facebook Reels Scroll Blocker
+
+**File:** `facebook_reels_blocker.user.js`
+
+A Tampermonkey/Greasemonkey userscript that prevents automatic navigation between Facebook Reels. Stops you from accidentally scrolling or clicking to the next reel.
+
+### Features
+
+- **Blocks scroll/wheel** – prevents moving to the next/previous reel by scrolling
+- **Blocks keyboard navigation** – disables Arrow keys, Space, PageUp/PageDown on reels
+- **Blocks touch swipe** – prevents mobile-style swipe navigation
+- **Disables navigation arrows** – neutralizes the Next/Previous Card buttons
+- **Non-intrusive** – all other controls (sound, like, comment, share) remain fully functional
+
+### Installation
+
+#### From Greasy Fork (recommended)
+1. Install [Tampermonkey](https://www.tampermonkey.net/) browser extension
+2. Visit the script page on [Greasy Fork](https://greasyfork.org/) and click **Install**
+
+#### Manual Install
+1. Install [Tampermonkey](https://www.tampermonkey.net/) browser extension
+2. Click the Tampermonkey icon → **Create a new script**
+3. Delete the default content and paste the contents of `facebook_reels_blocker.user.js`
+4. Press **Ctrl+S** to save
+5. The script activates automatically on Facebook Reels pages
+
+### How It Works
+
+- Intercepts scroll, keyboard, and pointer events in the **capture phase** before Facebook can handle them
+- Uses a `MutationObserver` to continuously detect and neutralize navigation arrow buttons as Facebook re-renders them
+- Replaces arrow elements with inert clones that have no event listeners
+- Only targets navigation-specific elements — other interactive buttons are unaffected
+
+### Notes
+
+- Works on `facebook.com/reel/*` and `facebook.com/reels/*` URLs
+- You can still pause/play, mute/unmute, like, comment, and share
+- The navigation arrows appear dimmed to indicate they are disabled
