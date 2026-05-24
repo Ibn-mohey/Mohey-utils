@@ -83,15 +83,17 @@ The CSV file contains the following columns:
 
 **File:** `facebook_reels_blocker.user.js`
 
-A Tampermonkey/Greasemonkey userscript that prevents automatic navigation between Facebook Reels. Stops you from accidentally scrolling or clicking to the next reel.
+A Tampermonkey/Greasemonkey userscript that prevents automatic navigation between Facebook Reels. Stops you from accidentally scrolling, clicking, or swiping to the next reel. Works both when opening reels via direct link and from the Facebook feed.
 
 ### Features
 
-- **Blocks scroll/wheel** – prevents moving to the next/previous reel by scrolling
-- **Blocks keyboard navigation** – disables Arrow keys, Space, PageUp/PageDown on reels
+- **Blocks programmatic scrolling** – intercepts `scrollTo`, `scrollBy`, and `scrollTop` on reel containers so Facebook cannot navigate between reels
+- **Blocks keyboard navigation** – disables Arrow keys, PageUp/PageDown on reels
 - **Blocks touch swipe** – prevents mobile-style swipe navigation
 - **Disables navigation arrows** – neutralizes the Next/Previous Card buttons
-- **Stops auto-loop** – video plays once then pauses; click or press Space to replay
+- **Stops auto-loop** – video plays once then pauses; click the video or press Space to replay
+- **Removes preloaded reels** – prevents Facebook from loading extra reels in the background
+- **SPA-aware** – hooks into `history.pushState`/`replaceState` so it works when navigating from the Facebook feed without a full page reload
 - **Non-intrusive** – all other controls (sound, like, comment, share) remain fully functional
 
 ### Installation
@@ -103,20 +105,22 @@ A Tampermonkey/Greasemonkey userscript that prevents automatic navigation betwee
 #### Manual Install
 1. Install [Tampermonkey](https://www.tampermonkey.net/) browser extension
 2. Click the Tampermonkey icon → **Create a new script**
-3. go to my github Page [here](https://github.com/Ibn-mohey/Mohey-utils/blob/main/Scripts/facebook_reels_blocker.user.js)
-3. Delete the default content and paste the contents of [`facebook_reels_blocker.user.js`](https://github.com/Ibn-mohey/Mohey-utils/blob/main/Scripts/facebook_reels_blocker.user.js)
-4. Press **Ctrl+S** to save
-5. The script activates automatically on Facebook Reels pages
+3. Go to my GitHub page [here](https://github.com/Ibn-mohey/Mohey-utils/blob/main/Scripts/facebook_reels_blocker.user.js)
+4. Delete the default content and paste the contents of [`facebook_reels_blocker.user.js`](https://github.com/Ibn-mohey/Mohey-utils/blob/main/Scripts/facebook_reels_blocker.user.js)
+5. Press **Ctrl+S** to save
+6. The script activates automatically on Facebook Reels pages
 
 ### How It Works
 
-- Intercepts scroll, keyboard, and pointer events in the **capture phase** before Facebook can handle them
-- Uses a `MutationObserver` to continuously detect and neutralize navigation arrow buttons as Facebook re-renders them
+- **Intercepts programmatic scroll methods** (`scrollTo`, `scrollBy`, `scrollTop` setter) on containers with video elements — this is how Facebook actually moves between reels regardless of whether you clicked an arrow, an edge zone, or used keyboard
+- **Hooks `history.pushState`/`replaceState`** to detect SPA navigation from the Facebook feed and re-attach all observers
+- Uses `MutationObserver` to continuously detect and neutralize navigation arrow buttons as Facebook re-renders them
 - Replaces arrow elements with inert clones that have no event listeners
-- Only targets navigation-specific elements — other interactive buttons are unaffected
+- Detects reels by URL (`/reel/`, `/reels/`), presence of arrow buttons, or a dialog overlay containing video
+- Removes extra preloaded reel children from the DOM to keep only the current reel
 
 ### Notes
 
-- Works on `facebook.com/reel/*` and `facebook.com/reels/*` URLs
+- Works on all `facebook.com/*` pages — activates only when a reel is detected
 - You can still pause/play, mute/unmute, like, comment, and share
 - The navigation arrows appear dimmed to indicate they are disabled

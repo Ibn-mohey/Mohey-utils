@@ -1,11 +1,10 @@
 // ==UserScript==
 // @name         Facebook Reels Scroll Blocker
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @description  Blocks scrolling between Facebook Reels, disables navigation arrows, and stops auto-loop
+// @version      1.2
+// @description  Blocks scrolling between Facebook Reels, disables navigation arrows, stops auto-loop, and limits reel preloading
 // @author       ibn-Mohey
-// @match        https://www.facebook.com/reel/*
-// @match        https://www.facebook.com/reels/*
+// @match        https://www.facebook.com/*
 // @grant        none
 // @license      MIT
 // @run-at       document-start
@@ -14,15 +13,40 @@
 (function () {
     'use strict';
 
-    // Block scroll/wheel events on reels containers
-    function blockScroll(e) {
-        e.stopPropagation();
-        e.preventDefault();
+    // ── Hook into SPA navigation ──
+    // Facebook uses history.pushState/replaceState for navigation — we intercept them
+    const _pushState = history.pushState;
+    const _replaceState = history.replaceState;
+    history.pushState = function () {
+        _pushState.apply(this, arguments);
+        onNavigation();
+    };
+    history.replaceState = function () {
+        _replaceState.apply(this, arguments);
+        onNavigation();
+    };
+    window.addEventListener('popstate', onNavigation);
+
+    function onNavigation() {
+        console.log('[Reels Blocker] Navigation detected:', window.location.pathname);
+        // Re-attach observers after a short delay (DOM needs to update)
+        setTimeout(reAttach, 300);
+        setTimeout(reAttach, 1000);
+        setTimeout(reAttach, 2500);
+    }
+
+    function reAttach() {
+        if (!isReelsPage()) return;
+        console.log('[Reels Blocker] Reels page detected, re-attaching...');
+        attachObservers();
+        disableAutoLoop();
+        limitReelsChildren();
     }
 
     // Block keyboard navigation (arrow keys, space, page up/down)
     function blockKeys(e) {
-        const blocked = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'PageUp', 'PageDown'];
+        if (!isReelsPage()) return;
+        const blocked = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown'];
         if (blocked.includes(e.code)) {
             e.stopPropagation();
             e.preventDefault();
@@ -31,6 +55,7 @@
 
     // Block touch swipe navigation
     function blockTouch(e) {
+        if (!isReelsPage()) return;
         if (e.touches.length === 1) {
             e.stopPropagation();
             e.preventDefault();
@@ -38,8 +63,6 @@
     }
 
     // Capture phase listeners to intercept before Facebook handles them
-    document.addEventListener('wheel', blockScroll, { capture: true, passive: false });
-    document.addEventListener('scroll', blockScroll, { capture: true, passive: false });
     document.addEventListener('keydown', blockKeys, { capture: true });
     document.addEventListener('touchmove', blockTouch, { capture: true, passive: false });
 
@@ -59,8 +82,57 @@
         return /^(Next|Previous)(\s+(Card|Reel))?$/i.test(label);
     }
 
+    // Check if we're viewing a reel
+    function isReelsPage() {
+        if (/\/reel(s)?[\/\?]?/i.test(window.location.pathname)) return true;
+        if (document.querySelector(ARROW_SELECTOR)) return true;
+        const dialogs = document.querySelectorAll('[role="dialog"]');
+        for (const d of dialogs) {
+            if (d.querySelector('video')) return true;
+        }
+        return false;
+    }
+
+    // ── Block programmatic scrolling (how Facebook actually navigates reels) ──
+    // Facebook scrolls a container to move between reels — intercept scroll methods
+    const _origScrollTo = Element.prototype.scrollTo;
+    const _origScrollBy = Element.prototype.scrollBy;
+    const _origScrollTopSet = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop').set;
+    const _origScrollTopGet = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop').get;
+
+    Element.prototype.scrollTo = function (...args) {
+        if (isReelsPage() && this.querySelector && this.querySelector('video')) {
+            console.log('[Reels Blocker] Blocked scrollTo on reel container');
+            return;
+        }
+        return _origScrollTo.apply(this, args);
+    };
+
+    Element.prototype.scrollBy = function (...args) {
+        if (isReelsPage() && this.querySelector && this.querySelector('video')) {
+            console.log('[Reels Blocker] Blocked scrollBy on reel container');
+            return;
+        }
+        return _origScrollBy.apply(this, args);
+    };
+
+    Object.defineProperty(Element.prototype, 'scrollTop', {
+        set(val) {
+            if (isReelsPage() && this.querySelector && this.querySelector('video')) {
+                console.log('[Reels Blocker] Blocked scrollTop set on reel container');
+                return;
+            }
+            return _origScrollTopSet.call(this, val);
+        },
+        get() {
+            return _origScrollTopGet.call(this);
+        },
+        configurable: true,
+    });
+
     // Block clicks on navigation arrows
     document.addEventListener('click', function (e) {
+        if (!isReelsPage()) return;
         if (isNavArrow(e.target)) {
             e.stopImmediatePropagation();
             e.stopPropagation();
@@ -71,6 +143,7 @@
     // Also block mousedown/pointerdown (Facebook may use these instead of click)
     ['mousedown', 'mouseup', 'pointerdown', 'pointerup'].forEach(evt => {
         document.addEventListener(evt, function (e) {
+            if (!isReelsPage()) return;
             if (isNavArrow(e.target)) {
                 e.stopImmediatePropagation();
                 e.stopPropagation();
@@ -117,8 +190,18 @@
 
     const startObserver = () => observer.observe(document.body, { childList: true, subtree: true });
 
-    if (document.body) startObserver();
-    else document.addEventListener('DOMContentLoaded', startObserver);
+    // ── Unified function to (re-)attach all observers ──
+    function attachObservers() {
+        if (!document.body) return;
+        // Disconnect first to avoid duplicates
+        observer.disconnect();
+        videoObserver.disconnect();
+        reelsLimiter.disconnect();
+        // Re-attach
+        observer.observe(document.body, { childList: true, subtree: true });
+        videoObserver.observe(document.body, { childList: true, subtree: true });
+        reelsLimiter.observe(document.body, { childList: true, subtree: true });
+    }
 
     // ── Stop video auto-loop: pause when it reaches the end ──
     const handledVideos = new WeakSet();
@@ -165,13 +248,57 @@
 
     // Run on new video elements added to DOM
     const videoObserver = new MutationObserver(disableAutoLoop);
-    const startVideoObserver = () => {
+
+    // ── Limit reels container: keep only the first reel, remove extras ──
+    // The reels container path: div[2]/div[1] holds child divs for each reel
+    function limitReelsChildren() {
+        // Find containers that hold multiple reel items
+        // Target the known structure: a scrollable container with multiple reel children
+        document.querySelectorAll('div[style*="translate"]').forEach(container => {
+            // Check parent chain matches reels-like structure
+            const children = Array.from(container.children).filter(c => c.tagName === 'DIV');
+            if (children.length > 1 && children[0].querySelector('video')) {
+                // Keep only the first reel child, remove the rest
+                children.slice(1).forEach(child => child.remove());
+            }
+        });
+
+        // Generic approach: find any container with many video-holding siblings
+        // and keep only the first
+        document.querySelectorAll('video').forEach(video => {
+            // Walk up to find the reel item wrapper
+            let reelItem = video.closest('div');
+            for (let i = 0; i < 5 && reelItem; i++) {
+                const parent = reelItem.parentElement;
+                if (!parent) break;
+                const siblings = Array.from(parent.children).filter(c => c.tagName === 'DIV');
+                if (siblings.length > 1 && siblings.indexOf(reelItem) >= 0) {
+                    // Check if multiple siblings contain videos (= multiple reels)
+                    const videoSiblings = siblings.filter(s => s.querySelector('video'));
+                    if (videoSiblings.length > 1) {
+                        // Keep only the first one with a video
+                        videoSiblings.slice(1).forEach(s => s.remove());
+                        console.log(`[Reels Blocker] Removed ${videoSiblings.length - 1} extra reel(s)`);
+                        return;
+                    }
+                }
+                reelItem = parent;
+            }
+        });
+    }
+
+    const reelsLimiter = new MutationObserver(() => {
+        limitReelsChildren();
+    });
+
+    // ── Initial attach ──
+    function init() {
+        attachObservers();
         disableAutoLoop();
-        videoObserver.observe(document.body, { childList: true, subtree: true });
-    };
+        limitReelsChildren();
+        console.log('[Reels Blocker] Active – scrolling, arrows, and auto-loop disabled.');
+    }
 
-    if (document.body) startVideoObserver();
-    else document.addEventListener('DOMContentLoaded', startVideoObserver);
-
-    console.log('[Reels Blocker] Active – scrolling, arrows, and auto-loop disabled.');
+    if (document.body) init();
+    else document.addEventListener('DOMContentLoaded', init);
 })();
