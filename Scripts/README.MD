@@ -79,6 +79,37 @@ The CSV file contains the following columns:
 
 ---
 
+## YouTube Playlist Extractor (Tampermonkey)
+
+**File:** `youtube_playlist_extractor.user.js`
+
+A Tampermonkey userscript version of the YouTube Playlist Extractor. Provides multiple ways to trigger playlist export without manually pasting code in the console.
+
+### Features
+
+- **Menu Commands** — Two Tampermonkey menu entries:
+  - *Export Playlist to CSV* — full export with auto-scrolling
+  - *Export Playlist (No Scroll)* — quick export of already-loaded videos
+- **Floating Button** — A red `📥 Export Playlist CSV` button appears in the bottom-right corner on playlist pages, with visual loading/success/error states
+- **GM_download** — Uses Tampermonkey's native download API with automatic fallback to the standard browser download method
+- Same comprehensive metadata extraction as the console version
+
+### Installation
+
+1. Install [Tampermonkey](https://www.tampermonkey.net/) browser extension
+2. Click the Tampermonkey icon → **Create a new script**
+3. Delete the default content and paste the contents of [`youtube_playlist_extractor.user.js`](https://github.com/Ibn-mohey/Mohey-utils/blob/main/Scripts/youtube_playlist_extractor.user.js)
+4. Press **Ctrl+S** to save
+5. Navigate to any YouTube playlist — the export button appears automatically
+
+### Usage
+
+- **Floating button:** Click the red button on any playlist page
+- **Menu command:** Click the Tampermonkey icon → choose an export option
+- Works on any `youtube.com` page; button only shows on playlist pages
+
+---
+
 ## Facebook Reels Scroll Blocker
 
 **File:** `facebook_reels_blocker.user.js`
