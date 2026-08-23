@@ -194,7 +194,10 @@
         window.scrollTo(0, document.documentElement.scrollHeight);
         await sleep(delayMs);
 
-        const count = document.querySelectorAll("ytd-playlist-video-renderer").length;
+        const count = Math.max(
+          document.querySelectorAll("ytd-playlist-video-renderer").length,
+          document.querySelectorAll("yt-lockup-view-model").length
+        );
         if (count === lastCount) {
           stableRounds++;
         } else {
@@ -215,7 +218,24 @@
 
     // ── Extract data ──
     console.log("🔍 Extracting video data...");
-    const rows = [...document.querySelectorAll("ytd-playlist-video-renderer")];
+
+    const rowSelectors = [
+      "ytd-playlist-video-renderer",
+      "yt-lockup-view-model",
+      "ytd-playlist-panel-video-renderer",
+    ];
+
+    let rows = [];
+    let detectedSelector = null;
+    for (const sel of rowSelectors) {
+      const found = document.querySelectorAll(sel);
+      if (found.length > 0) {
+        rows = [...found];
+        detectedSelector = sel;
+        console.log(`✅ Using selector "${sel}" — found ${rows.length} items`);
+        break;
+      }
+    }
 
     if (rows.length === 0) {
       alert("❌ No playlist videos found on this page.");
@@ -224,26 +244,71 @@
 
     const data = rows.map((row, idx) => {
       try {
-        const indexText = cleanText(row.querySelector("#index")?.textContent);
-        const titleEl = row.querySelector("a#video-title");
-        const title = cleanText(titleEl?.getAttribute("title") || titleEl?.textContent);
-        const href = titleEl?.getAttribute("href") || row.querySelector("a#thumbnail")?.getAttribute("href") || "";
+        const isLockup = row.tagName.toLowerCase() === "yt-lockup-view-model";
+
+        const playlistIndex = isLockup
+          ? cleanText(row.querySelector("[class*='sequence-number'], .yt-thumbnail-view-model-wiz__sequenced-overlay-badge")?.textContent)
+          : cleanText(row.querySelector("#index")?.textContent);
+
+        const titleEl = isLockup
+          ? (row.querySelector("h3 a, .yt-lockup-metadata-view-model-wiz__title a") || row.querySelector("a[href*='/watch']"))
+          : row.querySelector("a#video-title");
+        const title = cleanText(titleEl?.getAttribute("title") || titleEl?.getAttribute("aria-label") || titleEl?.textContent);
+
+        const href = isLockup
+          ? (titleEl?.getAttribute("href") || row.querySelector("a[href*='/watch']")?.getAttribute("href") || "")
+          : (titleEl?.getAttribute("href") || row.querySelector("a#thumbnail")?.getAttribute("href") || "");
         const videoUrl = getFullUrl(href);
-        const channelEl = row.querySelector("ytd-channel-name #text a, ytd-channel-name #text");
+
+        const channelEl = isLockup
+          ? (row.querySelector("yt-content-metadata-view-model a[href*='/@'], yt-content-metadata-view-model a[href*='/channel'], [class*='metadata'] a") ||
+             row.querySelector("yt-content-metadata-view-model a"))
+          : row.querySelector("ytd-channel-name #text a, ytd-channel-name #text");
         const channel = cleanText(channelEl?.textContent);
         const channelUrl = getFullUrl(channelEl?.getAttribute("href"));
-        const durationEl =
-          row.querySelector("ytd-thumbnail-overlay-time-status-renderer .ytBadgeShapeText") ||
-          row.querySelector("ytd-thumbnail-overlay-time-status-renderer #text");
+
+        const durationEl = isLockup
+          ? (row.querySelector("badge-shape .yt-spec-badge-shape__text") ||
+             row.querySelector(".yt-thumbnail-overlay-time-status-view-model-wiz__text") ||
+             row.querySelector("badge-shape"))
+          : (row.querySelector("ytd-thumbnail-overlay-time-status-renderer .ytBadgeShapeText") ||
+             row.querySelector("ytd-thumbnail-overlay-time-status-renderer #text"));
         const duration = cleanText(durationEl?.textContent);
-        const durationLabel =
-          row.querySelector("badge-shape")?.getAttribute("aria-label") ||
-          row.querySelector("ytd-thumbnail-overlay-time-status-renderer #text")?.getAttribute("aria-label") || "";
-        const videoInfoSpans = [...row.querySelectorAll("#video-info span")]
-          .map((x) => cleanText(x.textContent)).filter(Boolean);
+
+        const durationLabel = isLockup
+          ? (row.querySelector("badge-shape")?.getAttribute("aria-label") || duration)
+          : (row.querySelector("badge-shape")?.getAttribute("aria-label") ||
+             row.querySelector("ytd-thumbnail-overlay-time-status-renderer #text")?.getAttribute("aria-label") || "");
+
+        let viewsText = "", publishedText = "";
+        if (isLockup) {
+          const metaSpans = [...row.querySelectorAll("yt-content-metadata-view-model span, [class*='metadata-row'] span")]
+            .map((s) => cleanText(s.textContent)).filter((t) => t && t.length > 1);
+          viewsText = metaSpans.find((t) => /view|مشاهد/i.test(t)) || metaSpans[1] || "";
+          publishedText = metaSpans.find((t) => /ago|منذ|year|month|day|week|hour|ساعة|يوم|أسبوع|شهر|سنة/i.test(t)) || metaSpans[metaSpans.length - 1] || "";
+        } else {
+          const videoInfoSpans = [...row.querySelectorAll("#video-info span")]
+            .map((x) => cleanText(x.textContent)).filter(Boolean);
+          viewsText = videoInfoSpans[0] || "";
+          publishedText = videoInfoSpans[videoInfoSpans.length - 1] || "";
+        }
+
+        const thumbnailUrl = row.querySelector("yt-image img")?.src || "";
+
+        const h3AriaLabel = isLockup
+          ? (titleEl?.getAttribute("aria-label") || row.querySelector("h3")?.getAttribute("aria-label") || "")
+          : (row.querySelector("h3")?.getAttribute("aria-label") || "");
+
+        const watched = isLockup
+          ? cleanText(row.querySelector("[class*='playback-status'], [class*='watched']")?.textContent)
+          : cleanText(row.querySelector("ytd-thumbnail-overlay-playback-status-renderer")?.textContent);
+
+        const progress = isLockup
+          ? (row.querySelector("[class*='resume-playback'] [class*='progress'], [class*='progress-bar']")?.style?.width || "")
+          : (row.querySelector("ytd-thumbnail-overlay-resume-playback-renderer #progress")?.style?.width || "");
 
         return {
-          playlist_index: indexText,
+          playlist_index: playlistIndex,
           title,
           video_id: getParam(videoUrl, "v"),
           video_url: videoUrl,
@@ -253,12 +318,12 @@
           channel_url: channelUrl,
           duration,
           duration_label: durationLabel,
-          views_text: videoInfoSpans[0] || "",
-          published_text: videoInfoSpans[videoInfoSpans.length - 1] || "",
-          watched_status: cleanText(row.querySelector("ytd-thumbnail-overlay-playback-status-renderer")?.textContent),
-          watch_progress: row.querySelector("ytd-thumbnail-overlay-resume-playback-renderer #progress")?.style?.width || "",
-          thumbnail_url: row.querySelector("yt-image img")?.src || "",
-          aria_label: row.querySelector("h3")?.getAttribute("aria-label") || "",
+          views_text: viewsText,
+          published_text: publishedText,
+          watched_status: watched,
+          watch_progress: progress,
+          thumbnail_url: thumbnailUrl,
+          aria_label: h3AriaLabel,
         };
       } catch (err) {
         console.warn(`⚠️ Error on video ${idx + 1}:`, err);

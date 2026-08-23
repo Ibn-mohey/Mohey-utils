@@ -9,7 +9,8 @@ Usage (Colab):
 """
 
 # ── Colab installs ──────────────────────────────────────────────────────────
-# !apt-get update -qq && apt-get install -y -qq nodejs ffmpeg
+# !apt-get update -qq && apt-get install -y -qq ffmpeg
+# !curl -fsSL https://deno.land/install.sh | sh && echo 'export PATH="$HOME/.deno/bin:$PATH"' >> ~/.bashrc && export PATH="$HOME/.deno/bin:$PATH"
 # !pip install -q -U yt-dlp pandas libsql
 
 import os
@@ -343,6 +344,34 @@ def retry(fn, *args, retries=MAX_RETRIES, delay=RETRY_DELAY, label=""):
                 print(f"  ⚠ {label} attempt {attempt} failed: {e}  — retrying in {delay}s")
                 time.sleep(delay)
     raise last_err
+
+
+def list_formats(url: str) -> str:
+    """List available formats for a video URL. Returns formatted string."""
+    opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        **get_cookie_opt(),
+    }
+    with YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+    if not info or 'formats' not in info:
+        return "  (no formats found)"
+    lines = []
+    lines.append(f"  {'ID':<12} {'EXT':<6} {'RES':<10} {'VCODEC':<14} {'ACODEC':<14} {'SIZE':<10} {'NOTE'}")
+    lines.append(f"  {'─'*12} {'─'*6} {'─'*10} {'─'*14} {'─'*14} {'─'*10} {'─'*20}")
+    for f in info['formats']:
+        fid = f.get('format_id', '?')
+        ext = f.get('ext', '?')
+        res = f.get('resolution') or f"{f.get('width', '?')}x{f.get('height', '?')}"
+        vcodec = (f.get('vcodec') or 'none')[:13]
+        acodec = (f.get('acodec') or 'none')[:13]
+        fsize = f.get('filesize') or f.get('filesize_approx')
+        size_str = f"{fsize / 1024 / 1024:.1f}MB" if fsize else '?'
+        note = (f.get('format_note') or '')[:20]
+        lines.append(f"  {fid:<12} {ext:<6} {res:<10} {vcodec:<14} {acodec:<14} {size_str:<10} {note}")
+    return '\n'.join(lines)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -798,7 +827,24 @@ def _download_video(entry: dict, output_path: str, quality: str, conn) -> tuple[
         with YoutubeDL(ydl_opts) as ydl:
             ydl.extract_info(entry['webpage_url'], download=True)
 
-    retry(_do, label=title)
+    try:
+        retry(_do, label=title)
+    except Exception as e:
+        if 'Requested format is not available' in str(e):
+            print(f"  ⚠ Format not available for {title} @ {quality}p — listing available formats:")
+            try:
+                print(list_formats(entry['webpage_url']))
+            except Exception:
+                print("  (could not list formats)")
+            # Fallback: try 'best' (any quality)
+            print(f"  ↻ Retrying with fallback format 'best'...")
+            ydl_opts['format'] = 'best'
+            def _do_fallback():
+                with YoutubeDL(ydl_opts) as ydl:
+                    ydl.extract_info(entry['webpage_url'], download=True)
+            retry(_do_fallback, label=f"{title} (fallback)")
+        else:
+            raise
     db_upsert(conn, video_id=vid, mode='video', status='downloaded')
     print(f"  ↓ Downloaded: {title}")
 
