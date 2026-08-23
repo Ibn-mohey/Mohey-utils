@@ -7,3 +7,13 @@ Any file under the Name .search it's empty file it's there just for me to use [E
 
 ---
 
+## Contents
+
+- **[utils/Downloads_automations](utils/Downloads_automations/readme.md)** — turn repack/file-host
+  pages into direct download links (FitGirl mirrors + Akwam). Handles
+  `filekeeper.net` (no browser), `fuckingfast.co` (Cloudflare Turnstile via a persistent
+  real-Chrome profile), `paste.fitgirl-repacks.site` (local PrivateBin decrypt), and
+  `akwam.it` (Selenium). See its README for per-file details.
+
+---
+
